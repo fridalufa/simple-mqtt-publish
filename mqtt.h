@@ -1,14 +1,12 @@
-//#ifndef __MQTT_H__
+#ifndef __MQTT_H__
 #define __MQTT_H__
 
 // includes
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
 #include <unistd.h>
+#include "CC3000.h"
 
 // Control packet types
 #define CONNECT        1
@@ -46,3 +44,4 @@ uint8_t mqtt_isConnected();
 void mqtt_disconnect();
 void mqtt_ping();
 
+#endif

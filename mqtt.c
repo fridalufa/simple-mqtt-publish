@@ -8,7 +8,7 @@ int decodeLength(uint8_t bytes[]);
 ByteArray encodePayload(char* payload);
 void sendPacket(unsigned int msgType, ByteArray* variableHeader, ByteArray* payload);
 ByteArray encodeString (char* str);
-void handleResponses(uint8_t* bytes, size_t length);
+void handleResponses(char* bytes, size_t length);
 
 
 /******************************************************************************
@@ -88,28 +88,35 @@ ByteArray encodeString(char* str){
  *                         Connection related functions                       *
  ******************************************************************************/
 
-void mqtt_connect(char* host, unsigned short port, char* clientID, char* username, char* password){
+void tcp_read_callback(char* rx, uint16_t rx_len, sockaddr* from, uint16_t socket_Position) {
+	handleResponses(rx, rx_len);
+}
 
-	// Initiate socket connection
+void tcp_exception_callback(uint16_t pos){
+	// TODO: TCP Exception handling
+}
 
-	// --- MOCKUP CODE BEGIN ---
-	sock = socket(AF_INET, SOCK_STREAM, 0);
 
-	struct sockaddr_in server;
-	
-	unsigned long addr;
+void mqtt_connect(char* host, uint16_t port, char* clientID, char* username, char* password){
 
-	memset( &server, 0, sizeof (server));
+	unsigned long server_ip = 0L;
 
-	addr = inet_addr(host);
-	memcpy( (char *)&server.sin_addr, &addr, sizeof(addr));
-	server.sin_family = AF_INET;
-	server.sin_port = htons(1883);
+	gethostbyname(host, strlen(host), &server_ip);
 
-	if (connect(sock,(struct sockaddr*)&server, sizeof(server)) < 0){
-		return;
-    }
-    // --- MOCKUP CODE END ---
+	// Open socket
+	sock = CC3000_openSocketul(
+		server_ip,
+		port,
+		true,
+	    false,
+	    false,
+	    true,
+	    tcp_read_callback,
+	    NULL,
+	    tcp_exception_callback
+	);
+
+	// TODO: Muss man hier noch warten oder ist openSocket blockierend?
 
     connected = 1;
 
@@ -125,7 +132,7 @@ void mqtt_connect(char* host, unsigned short port, char* clientID, char* usernam
 		0x04, // protocol name length LSB
 		'M',  // |
 		'Q',  // | protocol name
-		'T',  // | 
+		'T',  // |
 		'T',  // |
 		0x04, // MQTT Protocol Level (0x04 = MQTT 3.1.1)
 		0x00, // connect flags (replaced by actual flags later)
@@ -181,15 +188,9 @@ void mqtt_connect(char* host, unsigned short port, char* clientID, char* usernam
 	};
 
     sendPacket(CONNECT, &variableHeader, &payload);
-
-    // --- MOCKUP CODE BEGIN ---
-    uint8_t buf[1024];
-    int read = recv(sock, buf, 1024, 0);
-    handleResponses(buf, read);
-    // --- MOCKUP CODE END ---
 }
 
-// evaluates to true when everythings is ready and messages can be published
+// evaluates to true when everything is ready and messages can be published
 uint8_t mqtt_isConnected(){
 	return (connected && mqttReady);
 }
@@ -210,8 +211,7 @@ void mqtt_disconnect(){
 void sendPacket(unsigned int msgType, ByteArray* variableHeader, ByteArray* payload){
 
 	if (!connected || (!mqttReady && msgType != CONNECT)){
-		printf("Error: Not connected or MQTT connection not ready!");
-		fflush(stdout);
+		// TODO: SendPacket error handling
 		return;
 	}
 
@@ -258,7 +258,7 @@ void sendPacket(unsigned int msgType, ByteArray* variableHeader, ByteArray* payl
 }
 
 // handles only CONNACK and PINGRESP packets
-void handleResponses(uint8_t* bytes, size_t length){
+void handleResponses(char* bytes, size_t length){
 
 	// all valid MQTT packets are at least two bytes long
 	if (length < 2){
@@ -270,15 +270,14 @@ void handleResponses(uint8_t* bytes, size_t length){
 	if(msgType == CONNACK){
 		if(bytes[3] == 0x00){
 			mqttReady = 1;
+			// TODO: Init PING sending via timer
 		}else{
-			fprintf(stderr, "Connection error! Code %u", bytes[3]);
-			fflush(stderr);
+			// TODO: Error handling
 		}
 	}
 
 	if(msgType == PINGRESP){
-		printf("PING response received!");
-		fflush(stdout);
+		// TODO: ping handling
 	}
 }
 
@@ -308,11 +307,4 @@ void mqtt_publish(char* topic, char* message){
 
 void mqtt_ping(){
 	sendPacket(PINGREQ, NULL, NULL);
-
-	// --- MOCKUP CODE BEGIN ---
-	// TODO: REMOVE
-    uint8_t buf[1024];
-    int read = recv(sock, buf, 1024, 0);
-    handleResponses(buf, read);
-    // --- MOCKUP CODE END ---
 }
