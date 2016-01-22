@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "CC3000.h"
+#include "CC3100.h"
 
 // Control packet types
 #define CONNECT        1
