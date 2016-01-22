@@ -3,6 +3,7 @@
 /******************************************************************************
  *                              Function declarations                         *
  ******************************************************************************/
+
 ByteArray encodeLength(int length);
 int decodeLength(uint8_t bytes[]);
 ByteArray encodePayload(char* payload);
@@ -18,6 +19,9 @@ uint8_t connected = 0;
 uint8_t mqttReady = 0;
 
 unsigned long sock;
+
+uint8_t* sendBuffer;
+uint16_t sendBufferLength;
 
 /******************************************************************************
  *                             Utility functions                              *
@@ -88,6 +92,21 @@ ByteArray encodeString(char* str){
  *                         Connection related functions                       *
  ******************************************************************************/
 
+long tcp_write_callback(char* tx, uint16_t tx_len, uint16_t socket_Position) {
+
+	long txLength = sendBufferLength;
+    if (sendBufferLength > 0) {
+
+        memcpy(tx, sendBuffer, sendBufferLength);
+        free(sendBuffer);
+        sendBufferLength = 0;
+        sendBuffer = NULL;
+
+    }
+
+    return txLength;
+}
+
 void tcp_read_callback(char* rx, uint16_t rx_len, sockaddr* from, uint16_t socket_Position) {
 	handleResponses(rx, rx_len);
 }
@@ -99,24 +118,23 @@ void tcp_exception_callback(uint16_t pos){
 
 void mqtt_connect(char* host, uint16_t port, char* clientID, char* username, char* password){
 
-	unsigned long server_ip = 0L;
+  
+	//unsigned long server_ip = 0L;
+	//gethostbyname(host, strlen(host), &server_ip, 4);
 
-	gethostbyname(host, strlen(host), &server_ip);
-
+  // The host parameter is currently ignored and hardcoded into the openSocket function
 	// Open socket
-	sock = CC3000_openSocketul(
-		server_ip,
+	sock = CC3100_openSocket(
+		127,
+		0,
+		0,
+		1,
 		port,
-		true,
-	    false,
-	    false,
-	    true,
+		TCP_Client,
 	    tcp_read_callback,
-	    NULL,
+	    tcp_write_callback,
 	    tcp_exception_callback
 	);
-
-	// TODO: Muss man hier noch warten oder ist openSocket blockierend?
 
     connected = 1;
 
@@ -179,7 +197,7 @@ void mqtt_connect(char* host, uint16_t port, char* clientID, char* username, cha
 	if(encodedPassword.bytes != NULL){
 		uint8_t* start = payloadBytes + encodedClientID.length + (payloadLength - encodedClientID.length - encodedPassword.length);
 		memcpy(start, encodedPassword.bytes, encodedPassword.length);
-		//free(encodedPassword.length);
+		//free(encodedPassword.bytes);
 	}
 
 	ByteArray payload = (ByteArray) {
@@ -200,7 +218,7 @@ void mqtt_disconnect(){
 	sendPacket(DISCONNECT, NULL, NULL);
 	connected = 0;
 	mqttReady = 0;
-	close(sock);
+	CC3100_closeSocket(sock);
 }
 
 /******************************************************************************
@@ -241,20 +259,25 @@ void sendPacket(unsigned int msgType, ByteArray* variableHeader, ByteArray* payl
 
 	// craft packet from parts
 	int packetSize = fixedHeader.length + remainingLength;
-	uint8_t packet[packetSize];
+	uint8_t* packet = (uint8_t*) malloc(packetSize);
 
 	memcpy(packet, fixedHeader.bytes, fixedHeader.length);
 
+	int variableHeaderLength = 0;
 	if(variableHeader != NULL){
+		variableHeaderLength = variableHeader->length;
 		memcpy(packet + fixedHeader.length, variableHeader->bytes, variableHeader->length);
 	}
 
 	if(payload != NULL){
-		memcpy(packet + fixedHeader.length + variableHeader->length, payload->bytes, payload->length);
+		memcpy(packet + fixedHeader.length + variableHeaderLength, payload->bytes, payload->length);
 	}
 
-	send(sock, packet, packetSize, 0);
+	// wait until last packet has been sent
+	while(sendBufferLength > 0){}
 
+	sendBuffer = packet;
+	sendBufferLength = packetSize;
 }
 
 // handles only CONNACK and PINGRESP packets
